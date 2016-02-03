@@ -9,6 +9,7 @@ import (
 	"strings"
 	"flag"
 	"encoding/json"
+	"github.com/gnvnix/heapsAlg"
 )
 
 type langModel struct {
@@ -17,30 +18,31 @@ type langModel struct {
 }
 
 //-------------------------
-// Bigram-Funktionen
+// Ngramm-Funktionen
 //-------------------------
 
-func learnBigrams(sentences []string) (map[string]float64) {
-	// Bigramme zählen
-	var bigrams = make(map[string]int)
+//.Lerne Ngramme
+func learnNgrams(sentences []string, n int) (map[string]float64) {
+	var ngrams = make(map[string]int)
 	for _,a := range sentences {
-		bigrams = readBigram(bigrams, a)
+		ngrams = countNgrams(ngrams, a, n)
 	}
-
-	// Wahrscheinlichkeit für Bigramme bestimmen und zurückgeben
-	return getNgramProb(bigrams)
+	return getNgramProb(ngrams)
 }
 
-// Füge Bigramme aus Satz s zu bigr hinzu
-func readBigram(bigr map[string]int, s string) (map[string]int) {
-	words := append([]string{"^"}, strings.Split(s, " ")...)
+// Zähle Ngramme
+func countNgrams(ngrams map[string]int, sentence string, n int) (map[string]int) {
+	words := append([]string{"^"}, strings.Split(sentence, " ")...)
 	words = append(words, "$")
-	for i:=0; i<len(words)-1; i++ {
-		if words[i] != "" && words[i+1] != "" {
-			bigr[words[i] + " " + words[i+1]]++
+	if len(words) < n {
+		return ngrams
+	}
+	for i:=0; i<len(words)-n+1; i++ {
+		if noEmpty(words[i:i+n]) {
+			ngrams[strings.Join(words[i:i+n], " ")]++
 		}
 	}
-	return bigr
+	return ngrams
 }
 
 // Bestimme Ngram-Wahrscheinlichkeit
@@ -57,30 +59,6 @@ func getNgramProb(ngram map[string]int) (map[string]float64) {
 }
 
 //-------------------------
-// Trigram-Funktionen
-//-------------------------
-
-func learnTrigrams(sentences []string) (map[string]float64) {
-	var trigrams = make(map[string]int)
-	for _,a := range sentences {
-		trigrams = readTrigram(trigrams, a)
-	}
-	return getNgramProb(trigrams)
-}
-
-// Füge Trigramme aus Satz s zu trigr hinzu
-func readTrigram(trigr map[string]int, s string) (map[string]int) {
-	words := append([]string{"^"}, strings.Split(s, " ")...)
-	words = append(words, "$")
-	for i := 0; i<len(words)-2; i++ {
-		if words[i] != "" && words[i+1] != "" && words[i+2] != "" {
-			trigr[strings.Join(words[i:i+3], " ")]++
-		}
-	}
-	return trigr
-}
-
-//-------------------------
 // Haupt-Lernfunktion
 //-------------------------
 
@@ -88,8 +66,8 @@ func learnEverything() (langModel) {
 	var bi, tri map[string]float64
 	sent := readSentences(os.Stdin)
 	fmt.Printf("Lerne %d Sätze.\n", len(sent))
-	bi = learnBigrams(sent)
-	tri = learnTrigrams(sent)
+	bi = learnNgrams(sent, 2)
+	tri = learnNgrams(sent, 3)
 	return langModel{bi, tri, getMin(bi), getMin(tri)}
 }
 
@@ -97,7 +75,7 @@ func learnEverything() (langModel) {
 // Auswertung
 //-------------------------
 
-// Bestimme die Wahrscheinlichkeit eines Satzes, für gegebene Bigramme
+// Bestimme die Wahrscheinlichkeit eines Satzes, für gegebenes languageModel
 func (model langModel) getSentProb(sent string) (float64) {
 	out := 1.0
 	sent = strings.ToLower(sent)
@@ -142,30 +120,13 @@ func mlsChecker(model langModel) {
 func (model langModel) mostLikelySentence(inp string) (string) {
 	var jline, topSent string
 	var lineP, topSentP float64
-	permutations := HeapsAlg(strings.Split(inp, " "))
+	permutations := heapsAlg.HeapsAlg(strings.Split(inp, " "))
 	for _,line := range permutations {
 		jline = strings.Join(line, " ")
 		lineP = model.getSentProb(jline)
 		if lineP > topSentP {
 			topSent = jline
 			topSentP = lineP
-		}
-	}
-	return topSent
-}
-
-func mostLikelySent(model langModel) (string) {
-	scanner := bufio.NewScanner(os.Stdin)
-	var line, topSent string
-	var lineP, topSentP float64
-	for scanner.Scan() {
-		line = scanner.Text()
-		if line != "" {
-			lineP = model.getSentProb(line)
-			if lineP > topSentP {
-				topSent = line
-				topSentP = lineP
-			}
 		}
 	}
 	return topSent
@@ -192,6 +153,15 @@ func getMin(b map[string]float64) (float64) {
 	return curMin
 }
 
+func noEmpty(words []string) (bool) {
+	for _,w := range words {
+		if w == "" {
+			return false
+		}
+	}
+	return true
+}
+
 // Lese Sätze ein und entferne Sonderzeichen
 func readSentences(r io.Reader) ([]string) {
 	scanner := bufio.NewScanner(r)
@@ -204,33 +174,6 @@ func readSentences(r io.Reader) ([]string) {
 		}
 	}
 	return out
-}
-
-//-------------------------
-// Heap's Algorithm
-//-------------------------
-
-func generate(n int, a []string, o *[][]string) {
-	if n == 1 {
-		// Rückgabe
-		*o = append(*o, a)
-	} else {
-		for i := 0; i < n-1; i++ {
-			generate(n-1, a, o)
-			if n%2 == 0 {
-				a[i], a[n-1] = a[n-1], a[i]
-			} else {
-				a[0], a[n-1] = a[n-1], a[0]
-			}
-		}
-		generate(n-1, a, o)
-	}
-}
-
-func HeapsAlg(words []string) ([][]string) {
-	var tmp [][]string
-	generate(len(words), words, &tmp)
-	return tmp
 }
 
 //-------------------------
@@ -271,12 +214,11 @@ func main() {
 		err = json.Unmarshal(b, &model)
 		check(err)
 
-		// Zeilenweise Satzwahrscheinlichkeit bestimmen
+		// Wahrscheinlichkeit(en) bestimmen
 		if *verbose {
 			sentProbCheck(model)
 		} else {
 			mlsChecker(model)
 		}
-		// fmt.Println(mostLikelySent(model))
 	}
 }
