@@ -9,7 +9,6 @@ import (
 	"strings"
 	"flag"
 	"encoding/json"
-	"github.com/gnvnix/heapsAlg"
 )
 
 type langModel struct {
@@ -120,7 +119,7 @@ func mlsChecker(model langModel) {
 func (model langModel) mostLikelySentence(inp string) (string) {
 	var jline, topSent string
 	var lineP, topSentP float64
-	permutations := heapsAlg.HeapsAlg(strings.Split(inp, " "))
+	permutations := HeapsAlg(strings.Split(inp, " "))
 	for _,line := range permutations {
 		jline = strings.Join(line, " ")
 		lineP = model.getSentProb(jline)
@@ -174,6 +173,35 @@ func readSentences(r io.Reader) ([]string) {
 		}
 	}
 	return out
+}
+
+//-------------------------
+// Heap's Algorithm
+//-------------------------
+
+func generate(n int, a []string, o *[][]string) {
+	if n == 1 {
+		// Rückgabe
+		c := make([]string, len(a))
+		copy(c, a)
+		*o = append(*o, c)
+	} else {
+		for i := 0; i < n-1; i++ {
+			generate(n-1, a, o)
+			if n%2 == 0 {
+				a[i], a[n-1] = a[n-1], a[i]
+			} else {
+				a[0], a[n-1] = a[n-1], a[0]
+			}
+		}
+		generate(n-1, a, o)
+	}
+}
+
+func HeapsAlg(words []string) ([][]string) {
+	var tmp [][]string
+	generate(len(words), words, &tmp)
+	return tmp
 }
 
 //-------------------------
