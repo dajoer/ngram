@@ -9,11 +9,12 @@ import (
 	"strings"
 	"flag"
 	"encoding/json"
+	"math"
 )
 
 type langModel struct {
-	Bigram, Trigram map[string]float64
-	BiMin, TriMin float64
+	Unigram, Bigram, Trigram map[string]int
+	Alpha float64
 }
 
 //-------------------------
@@ -21,18 +22,21 @@ type langModel struct {
 //-------------------------
 
 //.Lerne Ngramme
-func learnNgrams(sentences []string, n int) (map[string]float64) {
+func learnNgrams(sentences []string, n int) (map[string]int) {
 	var ngrams = make(map[string]int)
 	for _,a := range sentences {
 		ngrams = countNgrams(ngrams, a, n)
 	}
-	return getNgramProb(ngrams)
+	return ngrams
 }
 
 // Zähle Ngramme
 func countNgrams(ngrams map[string]int, sentence string, n int) (map[string]int) {
-	words := append([]string{"^"}, strings.Split(sentence, " ")...)
-	words = append(words, "$")
+	words := strings.Split(sentence, " ")
+	if n > 1 {
+		words = append([]string{"^"}, words...)
+		words = append(words, "$")
+	}
 	if len(words) < n {
 		return ngrams
 	}
@@ -52,9 +56,15 @@ func getNgramProb(ngram map[string]int) (map[string]float64) {
 	}
 	var out = make(map[string]float64)
 	for ng, ngc := range ngram {
-		out[ng] = float64(ngc) / float64(count[ng[:strings.LastIndex(ng, " ")]])
+		out[ng] = math.Log(float64(ngc) / float64(count[ng[:strings.LastIndex(ng, " ")]]))
 	}
 	return out
+}
+
+func getBigramProb(model langModel, bigr string) float64 {
+	ugc := float64(model.Unigram[bigr[:strings.LastIndex(bigr, " ")]])
+	bgc := float64(model.Bigram[bigr])
+	return math.Log((bgc + model.Alpha) / (ugc + model.Alpha))
 }
 
 //-------------------------
@@ -62,12 +72,13 @@ func getNgramProb(ngram map[string]int) (map[string]float64) {
 //-------------------------
 
 func learnEverything() (langModel) {
-	var bi, tri map[string]float64
+	var uni, bi, tri map[string]int
 	sent := readSentences(os.Stdin)
 	fmt.Printf("Lerne %d Sätze.\n", len(sent))
+	uni = learnNgrams(sent, 1)
 	bi = learnNgrams(sent, 2)
 	tri = learnNgrams(sent, 3)
-	return langModel{bi, tri, getMin(bi), getMin(tri)}
+	return langModel{uni, bi, tri, 0.001}
 }
 
 //-------------------------
@@ -85,55 +96,54 @@ func (model langModel) getSentProb(sent string) (float64) {
 		bigrList = append(bigrList, words[i] + " " + words[i+1])
 	}
 	for _, b := range bigrList {
-		if model.Bigram[b] == 0.0 {
-			out = out * model.BiMin
-		} else {
-			out = out * model.Bigram[b]
-		}
+		out = out + getBigramProb(model, b)
 	}
 	return out
 }
 
-func sentProbCheck(model langModel) {
+func sentProbCheck(model langModel, v bool) {
 	scanner := bufio.NewScanner(os.Stdin)
 	var line string
 	for scanner.Scan() {
 		line = scanner.Text()
 		if line != "" {
-			fmt.Printf("%e %s\n", model.getSentProb(line), line)
+			output(model.getSentProb(line), line, v)
 		}
 	}
 }
 
-func mlsChecker(model langModel) {
+func mostLikelySentence(model langModel, v bool) {
 	scanner := bufio.NewScanner(os.Stdin)
-	var line string
-	for scanner.Scan() {
-		line = scanner.Text()
-		if line != "" {
-			fmt.Println(model.mostLikelySentence(line))
-		}
-	}
-}
-
-func (model langModel) mostLikelySentence(inp string) (string) {
-	var jline, topSent string
+	var line, topSent string
 	var lineP, topSentP float64
-	permutations := HeapsAlg(strings.Split(inp, " "))
-	for _,line := range permutations {
-		jline = strings.Join(line, " ")
-		lineP = model.getSentProb(jline)
-		if lineP > topSentP {
-			topSent = jline
-			topSentP = lineP
+	for scanner.Scan() {
+		line = scanner.Text()
+		if line != "" {
+			lineP = model.getSentProb(line)
+			if lineP > topSentP || topSentP == 0.0 {
+				topSent = line
+				topSentP = lineP
+			}
 		}
 	}
-	return topSent
+	if v {
+		fmt.Printf("%e\t%s\n", topSentP, topSent)
+	} else {
+		fmt.Printf("%s\n", topSent)
+	}
 }
 
 //-------------------------
 // Hilfsfunktionen
 //-------------------------
+
+func output(p float64, s string, v bool) {
+	if v {
+		fmt.Printf("%e\t%s\n", p, s)
+	} else {
+		fmt.Printf("%e\n", p)
+	}
+}
 
 func check(e error) {
 	if e != nil {
@@ -176,42 +186,14 @@ func readSentences(r io.Reader) ([]string) {
 }
 
 //-------------------------
-// Heap's Algorithm
-//-------------------------
-
-func generate(n int, a []string, o *[][]string) {
-	if n == 1 {
-		// Rückgabe
-		c := make([]string, len(a))
-		copy(c, a)
-		*o = append(*o, c)
-	} else {
-		for i := 0; i < n-1; i++ {
-			generate(n-1, a, o)
-			if n%2 == 0 {
-				a[i], a[n-1] = a[n-1], a[i]
-			} else {
-				a[0], a[n-1] = a[n-1], a[0]
-			}
-		}
-		generate(n-1, a, o)
-	}
-}
-
-func HeapsAlg(words []string) ([][]string) {
-	var tmp [][]string
-	generate(len(words), words, &tmp)
-	return tmp
-}
-
-//-------------------------
 // Main
 //-------------------------
 
 func main() {
 	// Optionen definieren und einlesen
 	var learn = flag.Bool("learn", false, "")
-	var verbose = flag.Bool("verbose", false, "")
+	var verbose = flag.Bool("v", false, "")
+	var best = flag.Bool("b",false,"")
 	flag.Parse()
 	var filename = flag.Arg(0)
 	if filename == "" {
@@ -223,7 +205,6 @@ func main() {
 		// Bigramme lernen
 		model := learnEverything()
 		fmt.Printf("%d Bigramme und %d Trigramme eingelesen.\n", len(model.Bigram), len(model.Trigram))
-		fmt.Printf("biMin: %e\ntriMin: %e\n", model.BiMin, model.TriMin)
 
 		// Bigramme in json umwandeln
 		b, err := json.Marshal(model)
@@ -243,10 +224,10 @@ func main() {
 		check(err)
 
 		// Wahrscheinlichkeit(en) bestimmen
-		if *verbose {
-			sentProbCheck(model)
+		if *best {
+			mostLikelySentence(model, *verbose)
 		} else {
-			mlsChecker(model)
+			sentProbCheck(model, *verbose)
 		}
 	}
 }
