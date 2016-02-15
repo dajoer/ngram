@@ -14,6 +14,8 @@ import (
 
 type langModel struct {
 	Unigram, Bigram, Trigram map[string]int
+	WordCount int
+	Lambda1, Lambda2, Lambda3 float64
 	Alpha float64
 }
 
@@ -61,10 +63,22 @@ func getNgramProb(ngram map[string]int) (map[string]float64) {
 	return out
 }
 
+func getUnigramProb(model langModel, unigr string) float64 {
+	ugc := float64(model.Unigram[unigr])
+	wc := float64(model.WordCount)
+	return math.Log((ugc + model.Alpha) / (wc + model.Alpha))
+}
+
 func getBigramProb(model langModel, bigr string) float64 {
 	ugc := float64(model.Unigram[bigr[:strings.LastIndex(bigr, " ")]])
 	bgc := float64(model.Bigram[bigr])
 	return math.Log((bgc + model.Alpha) / (ugc + model.Alpha))
+}
+
+func getTrigramProb(model langModel, trigr string) float64 {
+	bgc := float64(model.Bigram[trigr[:strings.LastIndex(trigr, " ")]])
+	tgc := float64(model.Trigram[trigr])
+	return math.Log((tgc + model.Alpha) / (bgc + model.Alpha))
 }
 
 //-------------------------
@@ -78,7 +92,11 @@ func learnEverything() (langModel) {
 	uni = learnNgrams(sent, 1)
 	bi = learnNgrams(sent, 2)
 	tri = learnNgrams(sent, 3)
-	return langModel{uni, bi, tri, 0.001}
+	count := 0
+	for _,i := range uni {
+		count += i
+	}
+	return langModel{uni, bi, tri, count, 0.0, 1.0, 0.0, 0.001}
 }
 
 //-------------------------
@@ -89,16 +107,26 @@ func learnEverything() (langModel) {
 func (model langModel) getSentProb(sent string) (float64) {
 	out := 1.0
 	sent = strings.ToLower(sent)
-	words := append([]string{"^"}, strings.Split(sent, " ")...)
+	words := append([]string{"^", "^"}, strings.Split(sent, " ")...)
 	words = append(words, "$")
-	var bigrList []string
-	for i:=0; i<len(words)-1; i++ {
-		bigrList = append(bigrList, words[i] + " " + words[i+1])
+	var trigrList [][]string
+	for i:=0; i<len(words)-2; i++ {
+		trigrList = append(trigrList, []string{words[i], words[i+1], words[i+1]})
 	}
-	for _, b := range bigrList {
-		out = out + getBigramProb(model, b)
+	for _, b := range trigrList {
+		out = out + getInterpTrigramProb(model, b)
 	}
 	return out
+}
+
+func getInterpTrigramProb(model langModel, trig []string) float64 {
+	if len(trig) < 3 {
+		return 1.0
+	}
+	ugp := model.Lambda1 * getUnigramProb(model, trig[0])
+	bgp := model.Lambda2 * getBigramProb(model, strings.Join(trig[0:2], " "))
+	tgp := model.Lambda3 * getTrigramProb(model, strings.Join(trig[0:3], " "))
+	return ugp + bgp + tgp
 }
 
 func sentProbCheck(model langModel, v bool) {
