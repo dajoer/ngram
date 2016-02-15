@@ -51,34 +51,32 @@ func countNgrams(ngrams map[string]int, sentence string, n int) (map[string]int)
 }
 
 // Bestimme Ngram-Wahrscheinlichkeit
-func getNgramProb(ngram map[string]int) (map[string]float64) {
-	var count = make(map[string]int)
-	for ng, ngc := range ngram {
-		count[ng[:strings.LastIndex(ng, " ")]] += ngc
-	}
-	var out = make(map[string]float64)
-	for ng, ngc := range ngram {
-		out[ng] = math.Log(float64(ngc) / float64(count[ng[:strings.LastIndex(ng, " ")]]))
-	}
-	return out
-}
-
 func getUnigramProb(model langModel, unigr string) float64 {
 	ugc := float64(model.Unigram[unigr])
 	wc := float64(model.WordCount)
-	return math.Log((ugc + model.Alpha) / (wc + model.Alpha))
+	return (ugc + model.Alpha) / (wc + model.Alpha)
 }
 
 func getBigramProb(model langModel, bigr string) float64 {
 	ugc := float64(model.Unigram[bigr[:strings.LastIndex(bigr, " ")]])
 	bgc := float64(model.Bigram[bigr])
-	return math.Log((bgc + model.Alpha) / (ugc + model.Alpha))
+	return (bgc + model.Alpha) / (ugc + model.Alpha)
 }
 
 func getTrigramProb(model langModel, trigr string) float64 {
 	bgc := float64(model.Bigram[trigr[:strings.LastIndex(trigr, " ")]])
 	tgc := float64(model.Trigram[trigr])
-	return math.Log((tgc + model.Alpha) / (bgc + model.Alpha))
+	return (tgc + model.Alpha) / (bgc + model.Alpha)
+}
+
+func getInterpTrigramProb(model langModel, trig []string) float64 {
+	if len(trig) < 3 {
+		return 1.0
+	}
+	ugp := model.Lambda1 * math.Log(getUnigramProb(model, trig[0]))
+	bgp := model.Lambda2 * math.Log(getBigramProb(model, strings.Join(trig[0:2], " ")))
+	tgp := model.Lambda3 * math.Log(getTrigramProb(model, strings.Join(trig[0:3], " ")))
+	return ugp + bgp + tgp
 }
 
 //-------------------------
@@ -117,16 +115,6 @@ func (model langModel) getSentProb(sent string) (float64) {
 		out = out + getInterpTrigramProb(model, b)
 	}
 	return out
-}
-
-func getInterpTrigramProb(model langModel, trig []string) float64 {
-	if len(trig) < 3 {
-		return 1.0
-	}
-	ugp := model.Lambda1 * getUnigramProb(model, trig[0])
-	bgp := model.Lambda2 * getBigramProb(model, strings.Join(trig[0:2], " "))
-	tgp := model.Lambda3 * getTrigramProb(model, strings.Join(trig[0:3], " "))
-	return ugp + bgp + tgp
 }
 
 func sentProbCheck(model langModel, v bool) {
