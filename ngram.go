@@ -94,7 +94,7 @@ func learnEverything() (langModel) {
 	for _,i := range uni {
 		count += i
 	}
-	return langModel{uni, bi, tri, count, 0.0, 1.0, 0.0, 0.001}
+	return langModel{uni, bi, tri, count, 0.1, 0.8, 0.1, 0.001}
 }
 
 //-------------------------
